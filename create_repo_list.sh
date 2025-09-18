@@ -39,14 +39,14 @@ generate_csv_row() {
     local issues_count="$5"
     local pr_count="$6"
     
-    # Escape commas and quotes in values
-    repo_name=$(echo "$repo_name" | sed 's/"/""/g')
-    if [[ "$repo_name" == *","* ]]; then
+    # Escape CSV special characters (quotes, commas, newlines)
+    repo_name=$(echo "$repo_name" | sed 's/"/""/g' | tr -d '\n\r')
+    if [[ "$repo_name" == *","* || "$repo_name" == *"\""* ]]; then
         repo_name="\"$repo_name\""
     fi
     
-    description=$(echo "$description" | sed 's/"/""/g')
-    if [[ "$description" == *","* ]]; then
+    description=$(echo "$description" | sed 's/"/""/g' | tr -d '\n\r')
+    if [[ "$description" == *","* || "$description" == *"\""* ]]; then
         description="\"$description\""
     fi
     
@@ -77,7 +77,7 @@ get_issue_count() {
     local repo_name=$(echo "$repo_url" | sed -E 's|https://github\.com/[^/]+/([^/]+)|\1|')
     
     # Get open issues count with pagination (excludes PRs by filtering out items with pull_request field)
-    local issues_count=$(gh api --paginate "repos/$repo_owner/$repo_name/issues?state=open&per_page=100" --jq '[.[] | select(.pull_request == null)] | length' 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
+    local issues_count=$(gh api --paginate "repos/$repo_owner/$repo_name/issues?state=open&per_page=100" --jq '.[] | select(.pull_request == null)' 2>/dev/null | jq -s 'length' 2>/dev/null || echo "0")
     
     echo "$issues_count"
 }
@@ -89,7 +89,7 @@ get_pr_count() {
     local repo_name=$(echo "$repo_url" | sed -E 's|https://github\.com/[^/]+/([^/]+)|\1|')
     
     # Get open pull requests count with pagination
-    local pr_count=$(gh api --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=100" --jq 'length' 2>/dev/null | grep -E '^[0-9]+$' || echo "0")
+    local pr_count=$(gh api --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=100" --jq '.[]' 2>/dev/null | jq -s 'length' 2>/dev/null || echo "0")
     
     echo "$pr_count"
 }
