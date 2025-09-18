@@ -1,148 +1,173 @@
-# GitHub Data Exporter Scripts
+# GitHub Repository Monitor
 
-A collection of powerful shell scripts designed to streamline the process of fetching and exporting data about repositories, pull requests, and issues from GitHub.
+A collection of bash scripts to monitor GitHub repositories, issues, and pull requests.
 
-These scripts leverage the GitHub CLI (`gh`) and `jq` to create clean, detailed CSV files, making it easy to analyze, report on, or migrate your GitHub data.
+## Scripts
 
-## Features
+### `create_repo_list.sh`
 
--   **Create Repository Lists**: Automatically generate a list of public repositories for any user or organization.
--   **Filter Repositories**: Easily include or exclude forked repositories and specify a list of repositories to ignore.
--   **Export Open Pull Requests**: Fetch a comprehensive set of data for all open PRs in your specified repositories.
--   **Export Open Issues**: Get detailed information for all open issues, ready for analysis.
--   **CSV Output**: All data is exported into well-structured CSV files with detailed headers.
--   **Flexible Configuration**: Scripts are designed to read from a simple text file, making it easy to manage multiple repositories.
+Fetches repositories from a GitHub user or organization and outputs them in either plain text or CSV format.
 
-## Prerequisites
+#### Features
 
-Before you begin, ensure you have the following tools installed and configured on your system:
+- **Flexible Output Formats**: Choose between plain text (default) or CSV output
+- **Configurable Columns**: Define CSV columns in a separate configuration file
+- **Repository Filtering**: Filter by fork status and visibility (public/private/all)
+- **Ignore List**: Exclude specific repositories using an ignore file
+- **Comprehensive Data**: Extract repository names, URLs, and metadata
 
-1.  **[GitHub CLI (`gh`)](https://cli.github.com/)**: Required for authenticating with and fetching data from the GitHub API.
-    -   After installation, run `gh auth login` to authenticate with your GitHub account.
-2.  **[jq](https://stedolan.github.io/jq/)**: A lightweight and flexible command-line JSON processor. It is essential for parsing the API responses.
-    -   You can typically install it using a package manager (e.g., `brew install jq` on macOS, `sudo apt-get install jq` on Debian/Ubuntu).
-3.  **Bash**: The scripts are written in Bash and should be run in a Bash-compatible shell.
-
-## Setup
-
-1.  **Clone or Download**: Place the scripts (`create_repo_list.sh`, `prs.sh`, `issues.sh`) into the same directory.
-2.  **Make Scripts Executable**: Open your terminal, navigate to the directory, and run the following command to make the scripts executable:
-    ```bash
-    chmod +x create_repo_list.sh prs.sh issues.sh
-    ```
-
-## Usage
-
-The workflow is typically a two-step process:
-1.  First, create a `repos.txt` file that lists the target repositories.
-2.  Then, run the `prs.sh` or `issues.sh` scripts to export the data.
-
----
-
-### 1. `create_repo_list.sh`
-
-This script generates a file named `repos.txt` containing a list of repository URLs from a specified GitHub user or organization.
-
-**Command:**
+#### Usage
 
 ```bash
 ./create_repo_list.sh [OPTIONS] <GitHub_URL>
 ```
 
-**Arguments:**
+#### Options
 
--   `<GitHub_URL>`: **(Required)** The full URL of the GitHub user or organization (e.g., `https://github.com/microsoft`).
+- `-f, --forks-only`: Only list repositories that are forks
+- `-v, --visibility`: Filter by repository visibility: `public`, `private`, or `all` (default: `all`)
+- `-i, --ignore <file>`: Specify a file containing repository URLs to ignore (default: `ignored_repos_list.txt`)
+- `-c, --columns <file>`: Specify a file containing CSV column definitions (default: `columns.conf`)
+- `--csv`: Output in CSV format instead of plain text
+- `-h, --help`: Display help message and exit
 
-**Options:**
+#### Examples
 
--   `-f`, `--forks-only`: Only list repositories that are forks. (Default is to list non-forked repositories).
--   `-i`, `--ignore <file>`: Specify a file containing repository URLs to ignore. The default ignore file is `ignored_repos_list.txt`.
--   `-h`, `--help`: Display the help message.
-
-**Example:**
-
-To get all non-forked repositories from the `1Password` organization:
-
+**Basic usage (plain text output):**
 ```bash
-./create_repo_list.sh [https://github.com/1Password](https://github.com/1Password)
+./create_repo_list.sh https://github.com/1Password
 ```
 
-This will create a `repos.txt` file in the same directory.
-
----
-
-### 2. `prs.sh`
-
-This script reads the `repos.txt` file and exports all open pull requests from the listed repositories into a CSV file named `prs_export.csv`.
-
-**Configuration:**
-
--   Ensure a `repos.txt` file exists in the same directory. Each line should contain a repository in the format `owner/repo` or a full GitHub URL.
-
-**Command:**
-
+**CSV output with custom columns:**
 ```bash
-./prs.sh
+./create_repo_list.sh --csv -c my_columns.conf https://github.com/1Password
 ```
 
-The script will iterate through each repository in `repos.txt` and append the pull request data to `prs_export.csv`.
-
-**Output CSV Columns:**
-`Repository`, `Number`, `Title`, `State`, `IsDraft`, `Author`, `Assignees`, `Labels`, `Milestone`, `BaseBranch`, `HeadBranch`, `Additions`, `Deletions`, `ChangedFiles`, `ReviewDecision`, `URL`, `ID`, `CreatedAt`, `UpdatedAt`, `ClosedAt`, `MergedAt`, `MergedBy`, `Body`
-
----
-
-### 3. `issues.sh`
-
-This script reads the `repos.txt` file and exports all open issues from the listed repositories into a CSV file named `issues_export.csv`.
-
-**Configuration:**
-
--   Just like `prs.sh`, this script requires a `repos.txt` file.
-
-**Command:**
-
+**Forked repositories only:**
 ```bash
-./issues.sh
+./create_repo_list.sh -f https://github.com/1Password
 ```
 
-The script will process each repository and save the issue data to `issues_export.csv`.
+**Public repositories only:**
+```bash
+./create_repo_list.sh -v public https://github.com/1Password
+```
 
-**Output CSV Columns:**
-`Repository`, `Number`, `Title`, `State`, `StateReason`, `Author`, `Assignees`, `Labels`, `Milestone`, `Body`, `URL`, `ID`, `CreatedAt`, `UpdatedAt`, `ClosedAt`, `IsPinned`, `Closed`, `CommentsCount`, `ReactionsCount`
+#### CSV Column Configuration
 
-## Full Workflow Example
+The script supports configurable CSV columns defined in a separate file (default: `columns.conf`). Each line defines a column in the format:
 
-Here is a complete example of how to use these scripts together to export all open issues from your organization's repositories.
+```
+column_name=default_value
+```
 
-1.  **Create an ignore file (Optional)**:
-    If there are repositories you wish to exclude, create a file named `ignored_repos_list.txt` and add the full repository URLs to it, one per line.
+**Default columns:**
+- `name`: Repository name
+- `url`: Repository URL
+- `issues`: Number of issues (currently set to 0)
+- `pullRequests`: Number of pull requests (currently set to 0)
 
-    ```
-    [https://github.com/my-org/archive-repo](https://github.com/my-org/archive-repo)
-    [https://github.com/my-org/test-repo](https://github.com/my-org/test-repo)
-    ```
+**Custom column configuration example:**
+```
+# Custom columns.conf
+name=
+url=
+description=
+language=
+stars=0
+forks=0
+```
 
-2.  **Generate the Repository List**:
-    Run `create_repo_list.sh` to fetch all repositories from your organization, respecting the ignore file.
+**Notes:**
+- Column names are case-sensitive
+- The script automatically maps known column names (`name`, `url`, `issues`, `pullRequests`) to actual repository data
+- `issues` and `pullRequests` columns now fetch real counts from the GitHub API
+- Issues count excludes pull requests for accurate issue-only counting
+- Pull request count uses the dedicated PRs API endpoint
+- Other columns will use their default values
+- Columns appear in the CSV in the order they are defined in the configuration file
+- **Note**: CSV output with issue/PR counts makes additional API calls and may take longer
 
-    ```bash
-    ./create_repo_list.sh --ignore ignored_repos_list.txt [https://github.com/my-org](https://github.com/my-org)
-    ```
-    This creates `repos.txt` with the filtered list of repositories.
+#### Output Files
 
-3.  **Export Issues**:
-    Now, run the `issues.sh` script to fetch all open issues from the repositories listed in `repos.txt`.
+- **Plain text mode**: Creates `repos.txt` with one repository URL per line
+- **CSV mode**: Creates `repos.csv` with configurable columns and repository data
 
-    ```bash
-    ./issues.sh
-    ```
-    After the script finishes, you will have a file named `issues_export.csv` containing all the data.
+#### Requirements
 
-## Contributing
+- `gh` CLI tool (GitHub CLI) installed and authenticated
+- `jq` for JSON processing
+- `bash` shell
 
-Contributions are welcome! If you have ideas for improvements or find a bug, please open an issue or submit a pull request.
+#### Performance Considerations
+
+When using CSV output with issue and PR counts:
+- The script makes additional API calls for each repository
+- Processing time increases with the number of repositories
+- Progress indicators show current status during processing
+- GitHub API rate limits may apply for large repositories
+- Consider using the ignore file to exclude repositories you don't need
+
+### `issues.sh`
+
+Monitors issues in GitHub repositories.
+
+### `prs.sh`
+
+Monitors pull requests in GitHub repositories.
+
+## Installation
+
+1. Clone this repository
+2. Ensure you have the required dependencies installed
+3. Authenticate with GitHub CLI: `gh auth login`
+4. Make scripts executable: `chmod +x *.sh`
+
+## Configuration
+
+### Column Configuration File
+
+Create a `columns.conf` file to customize CSV output columns:
+
+```bash
+# Example columns.conf
+name=
+url=
+description=
+language=
+stars=0
+forks=0
+issues=0
+pullRequests=0
+```
+
+### Ignore File
+
+Create an `ignored_repos_list.txt` file to exclude specific repositories:
+
+```bash
+# Example ignored_repos_list.txt
+https://github.com/user/repo1
+https://github.com/user/repo2
+```
+
+## Examples
+
+**Generate a CSV report of all non-forked repositories:**
+```bash
+./create_repo_list.sh --csv https://github.com/1Password
+```
+
+**Generate a CSV report of only forked repositories:**
+```bash
+./create_repo_list.sh --csv -f https://github.com/1Password
+```
+
+**Use custom column configuration:**
+```bash
+./create_repo_list.sh --csv -c my_columns.conf https://github.com/1Password
+```
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
+See [LICENSE](LICENSE) file for details.
