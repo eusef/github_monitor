@@ -11,7 +11,7 @@ display_help() {
     echo "Usage: $0 <GitHub_URL>"
     echo
     echo "Fetches public, non-forked repositories from a GitHub user or organization."
-    echo "Outputs a CSV file with: Repo Name, Link, Description, Stars, Open Issues, Open PRs, Avg Issue Age, Avg PR Age"
+    echo "Outputs a CSV file with: Repo Name, Link, Description, Stars, Forks, Watchers, Open Issues, Open PRs, Avg Issue Age, Avg PR Age"
     echo
     echo "Arguments:"
     echo "  <GitHub_URL>    The full URL of the user or organization (e.g., https://github.com/1Password)."
@@ -27,7 +27,7 @@ display_help() {
 
 # Function to generate CSV header
 generate_csv_header() {
-    echo "Name,URL,Description,Stars,Open Issues,Open PRs,Avg Issue Age (Days),Avg PR Age (Days)"
+    echo "Name,URL,Description,Stars,Forks,Watchers,Open Issues,Open PRs,Avg Issue Age (Days),Avg PR Age (Days)"
 }
 
 # Function to generate CSV row for a repository
@@ -36,10 +36,12 @@ generate_csv_row() {
     local repo_url="$2"
     local description="$3"
     local stars="$4"
-    local issues_count="$5"
-    local pr_count="$6"
-    local issue_avg_age="$7"
-    local pr_avg_age="$8"
+    local forks="$5"
+    local watchers="$6"
+    local issues_count="$7"
+    local pr_count="$8"
+    local issue_avg_age="$9"
+    local pr_avg_age="${10}"
     
     # Escape CSV special characters (quotes, commas, newlines)
     repo_name=$(echo "$repo_name" | sed 's/"/""/g' | tr -d '\n\r')
@@ -52,10 +54,10 @@ generate_csv_row() {
         description="\"$description\""
     fi
     
-    echo "$repo_name,$repo_url,$description,$stars,$issues_count,$pr_count,$issue_avg_age,$pr_avg_age"
+    echo "$repo_name,$repo_url,$description,$stars,$forks,$watchers,$issues_count,$pr_count,$issue_avg_age,$pr_avg_age"
 }
 
-# Function to get repository details (description and stars)
+# Function to get repository details (description, stars, subscribers, and forks)
 get_repo_details() {
     local repo_url="$1"
     local repo_owner=$(echo "$repo_url" | sed -E 's|https://github\.com/([^/]+)/[^/]+|\1|')
@@ -66,9 +68,11 @@ get_repo_details() {
     if [ $? -eq 0 ]; then
         local description=$(echo "$repo_data" | jq -r '.description // ""')
         local stars=$(echo "$repo_data" | jq -r '.stargazers_count // 0')
-        echo "$description|$stars"
+        local subscribers=$(echo "$repo_data" | jq -r '.subscribers_count // 0')
+        local forks=$(echo "$repo_data" | jq -r '.forks_count // 0')
+        echo "$description|$stars|$subscribers|$forks"
     else
-        echo "|0"
+        echo "|0|0|0"
     fi
 }
 
@@ -195,7 +199,7 @@ if [ -f "$IGNORE_FILE" ]; then
 fi
 
 # Generate CSV output
-echo "📊 Generating CSV output with columns: Name, URL, Description, Stars, Open Issues, Open PRs, Avg Issue Age (Days), Avg PR Age (Days)"
+echo "📊 Generating CSV output with columns: Name, URL, Description, Stars, Forks, Watchers, Open Issues, Open PRs, Avg Issue Age (Days), Avg PR Age (Days)"
 
 # Start with CSV header
 generate_csv_header > "$OUTPUT_FILE"
@@ -223,10 +227,12 @@ while IFS= read -r repo_json; do
         
         echo "📊 Processing repository $current_repo/$total_repos: $repo_name"
         
-        # Fetch repository details (description and stars)
+        # Fetch repository details (description, stars, watchers, and forks)
         repo_details=$(get_repo_details "$repo_url")
         description=$(echo "$repo_details" | cut -d'|' -f1)
         stars=$(echo "$repo_details" | cut -d'|' -f2)
+        watchers=$(echo "$repo_details" | cut -d'|' -f3)
+        forks=$(echo "$repo_details" | cut -d'|' -f4)
         
         # Fetch actual issue and PR counts
         issues_count=$(get_issue_count "$repo_url")
@@ -247,7 +253,7 @@ while IFS= read -r repo_json; do
         fi
         
         # Generate CSV row and append to file
-        generate_csv_row "$repo_name" "$repo_url" "$description" "$stars" "$issues_count" "$pr_count" "$issue_avg_age" "$pr_avg_age" >> "$OUTPUT_FILE"
+        generate_csv_row "$repo_name" "$repo_url" "$description" "$stars" "$forks" "$watchers" "$issues_count" "$pr_count" "$issue_avg_age" "$pr_avg_age" >> "$OUTPUT_FILE"
     fi
 done < <(echo "$filtered_repos" | jq -c '.')
 
