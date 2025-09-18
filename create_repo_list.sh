@@ -11,7 +11,7 @@ display_help() {
     echo "Usage: $0 <GitHub_URL>"
     echo
     echo "Fetches public, non-forked repositories from a GitHub user or organization."
-    echo "Outputs a CSV file with: Repo Name, Link, Description, Stars, Open Issues, Open PRs"
+    echo "Outputs a CSV file with: Repo Name, Link, Description, Stars, Open Issues, Open PRs, Avg Issue Age, Avg PR Age"
     echo
     echo "Arguments:"
     echo "  <GitHub_URL>    The full URL of the user or organization (e.g., https://github.com/1Password)."
@@ -27,7 +27,7 @@ display_help() {
 
 # Function to generate CSV header
 generate_csv_header() {
-    echo "Name,URL,Description,Stars,Open Issues,Open PRs"
+    echo "Name,URL,Description,Stars,Open Issues,Open PRs,Avg Issue Age (Days),Avg PR Age (Days)"
 }
 
 # Function to generate CSV row for a repository
@@ -38,6 +38,8 @@ generate_csv_row() {
     local stars="$4"
     local issues_count="$5"
     local pr_count="$6"
+    local issue_avg_age="$7"
+    local pr_avg_age="$8"
     
     # Escape CSV special characters (quotes, commas, newlines)
     repo_name=$(echo "$repo_name" | sed 's/"/""/g' | tr -d '\n\r')
@@ -50,7 +52,7 @@ generate_csv_row() {
         description="\"$description\""
     fi
     
-    echo "$repo_name,$repo_url,$description,$stars,$issues_count,$pr_count"
+    echo "$repo_name,$repo_url,$description,$stars,$issues_count,$pr_count,$issue_avg_age,$pr_avg_age"
 }
 
 # Function to get repository details (description and stars)
@@ -92,6 +94,46 @@ get_pr_count() {
     local pr_count=$(gh api --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=100" --jq '.[]' 2>/dev/null | jq -s 'length' 2>/dev/null || echo "0")
     
     echo "$pr_count"
+}
+
+# Function to get average age of open pull requests in days
+get_pr_average_age() {
+    local repo_url="$1"
+    local repo_owner=$(echo "$repo_url" | sed -E 's|https://github\.com/([^/]+)/[^/]+|\1|')
+    local repo_name=$(echo "$repo_url" | sed -E 's|https://github\.com/[^/]+/([^/]+)|\1|')
+    
+    # Get open pull requests with creation dates, calculate average age in days
+    local pr_dates=$(gh api --paginate "repos/$repo_owner/$repo_name/pulls?state=open&per_page=100" --jq '.[] | .created_at' 2>/dev/null)
+    
+    if [ -z "$pr_dates" ]; then
+        echo "0"
+        return
+    fi
+    
+    # Convert line-separated dates to JSON array and calculate average age
+    local avg_age=$(echo "$pr_dates" | jq -R -s 'split("\n") | map(select(. != "")) | map(. as $date | (now - ($date | fromdateiso8601)) / 86400) | add / length | floor' 2>/dev/null || echo "0")
+    
+    echo "$avg_age"
+}
+
+# Function to get average age of open issues in days
+get_issue_average_age() {
+    local repo_url="$1"
+    local repo_owner=$(echo "$repo_url" | sed -E 's|https://github\.com/([^/]+)/[^/]+|\1|')
+    local repo_name=$(echo "$repo_url" | sed -E 's|https://github\.com/[^/]+/([^/]+)|\1|')
+    
+    # Get open issues (excluding PRs) with creation dates, calculate average age in days
+    local issue_dates=$(gh api --paginate "repos/$repo_owner/$repo_name/issues?state=open&per_page=100" --jq '.[] | select(.pull_request == null) | .created_at' 2>/dev/null)
+    
+    if [ -z "$issue_dates" ]; then
+        echo "0"
+        return
+    fi
+    
+    # Convert line-separated dates to JSON array and calculate average age
+    local avg_age=$(echo "$issue_dates" | jq -R -s 'split("\n") | map(select(. != "")) | map(. as $date | (now - ($date | fromdateiso8601)) / 86400) | add / length | floor' 2>/dev/null || echo "0")
+    
+    echo "$avg_age"
 }
 
 # --- Argument Parsing ---
@@ -153,7 +195,7 @@ if [ -f "$IGNORE_FILE" ]; then
 fi
 
 # Generate CSV output
-echo "📊 Generating CSV output with columns: Name, URL, Description, Stars, Open Issues, Open PRs"
+echo "📊 Generating CSV output with columns: Name, URL, Description, Stars, Open Issues, Open PRs, Avg Issue Age (Days), Avg PR Age (Days)"
 
 # Start with CSV header
 generate_csv_header > "$OUTPUT_FILE"
@@ -190,8 +232,22 @@ while IFS= read -r repo_json; do
         issues_count=$(get_issue_count "$repo_url")
         pr_count=$(get_pr_count "$repo_url")
         
+        # Fetch average issue age (only if there are issues)
+        if [ "$issues_count" -gt 0 ]; then
+            issue_avg_age=$(get_issue_average_age "$repo_url")
+        else
+            issue_avg_age="0"
+        fi
+        
+        # Fetch average PR age (only if there are PRs)
+        if [ "$pr_count" -gt 0 ]; then
+            pr_avg_age=$(get_pr_average_age "$repo_url")
+        else
+            pr_avg_age="0"
+        fi
+        
         # Generate CSV row and append to file
-        generate_csv_row "$repo_name" "$repo_url" "$description" "$stars" "$issues_count" "$pr_count" >> "$OUTPUT_FILE"
+        generate_csv_row "$repo_name" "$repo_url" "$description" "$stars" "$issues_count" "$pr_count" "$issue_avg_age" "$pr_avg_age" >> "$OUTPUT_FILE"
     fi
 done < <(echo "$filtered_repos" | jq -c '.')
 
