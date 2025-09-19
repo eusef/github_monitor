@@ -1,3 +1,5 @@
 *.csv
 repos.txt
 ignored_repos_list.txt
+.DS_Store
+EXPORT_*
