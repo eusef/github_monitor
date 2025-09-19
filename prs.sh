@@ -7,10 +7,48 @@
 # For backward compatibility, it also supports plain text files with one repo per line.
 REPO_LIST_FILE="repos.csv"
 
-# This is the name of the CSV file that will be created with the PR data.
-OUTPUT_CSV_FILE="prs_export.csv"
+# Base name for the CSV files that will be created with the PR data.
+OUTPUT_CSV_FILENAME="prs_export.csv"
 
 # --- Helper Functions ---
+
+# Function to generate timestamp for directory naming
+generate_timestamp() {
+    date +"%Y-%m-%d_%H-%M-%S"
+}
+
+# Function to find or create shared export directory
+get_export_directory() {
+    local current_time=$(date +%s)
+    local max_age=300  # 5 minutes in seconds
+    
+    # Look for existing export directories from the last 5 minutes
+    for dir in EXPORT_*; do
+        if [ -d "$dir" ]; then
+            # Extract timestamp from directory name
+            dir_timestamp=$(echo "$dir" | sed 's/EXPORT_//')
+            # Convert directory timestamp to epoch time
+            dir_epoch=$(date -j -f "%Y-%m-%d_%H-%M-%S" "$dir_timestamp" +%s 2>/dev/null)
+            
+            if [ $? -eq 0 ] && [ $((current_time - dir_epoch)) -lt $max_age ]; then
+                echo "$dir"
+                return
+            fi
+        fi
+    done
+    
+    # No recent directory found, create new one
+    local new_timestamp=$(generate_timestamp)
+    local new_dir="EXPORT_${new_timestamp}"
+    echo "$new_dir"
+}
+
+# Function to sanitize repository name for directory creation
+sanitize_repo_name() {
+    local repo_name="$1"
+    # Replace problematic characters with underscores and remove leading/trailing underscores
+    echo "$repo_name" | sed 's|[/:*?"<>|]|_|g' | sed 's|^_*||' | sed 's|_*$||'
+}
 
 # Function to detect if file is CSV format by checking for header
 is_csv_format() {
@@ -39,11 +77,15 @@ extract_repo_url_from_csv() {
 
 # --- Script Logic ---
 
-# Start with a clean slate by removing the old CSV if it exists.
-rm -f "$OUTPUT_CSV_FILE"
+# Get or create shared export directory
+EXPORT_DIR=$(get_export_directory)
 
-# Create the new CSV file and write the header row with all the new fields.
-echo "Repository,Number,Title,State,IsDraft,Author,Assignees,Labels,Milestone,BaseBranch,HeadBranch,Additions,Deletions,ChangedFiles,ReviewDecision,URL,ID,CreatedAt,UpdatedAt,ClosedAt,MergedAt,MergedBy,Body" > "$OUTPUT_CSV_FILE"
+if [ -d "$EXPORT_DIR" ]; then
+    echo "📁 Using existing export directory: $EXPORT_DIR"
+else
+    echo "📁 Creating new export directory: $EXPORT_DIR"
+    mkdir -p "$EXPORT_DIR"
+fi
 
 # Check if the repository list file actually exists before trying to read it.
 if [ ! -f "$REPO_LIST_FILE" ]; then
@@ -76,7 +118,18 @@ if is_csv_format "$REPO_LIST_FILE"; then
         # Extract 'owner/repo' from full URLs.
         repo_slug=$(echo "$repo_url" | sed -E 's|^(https?://)?(www\.)?github\.com/||' | sed 's|/$||' | sed 's/\.git$//')
         
-        echo "Fetching open PRs for '$repo_slug'..."
+        # Create sanitized directory name for the repository
+        repo_dir_name=$(sanitize_repo_name "$repo_slug")
+        repo_dir="$EXPORT_DIR/$repo_dir_name"
+        repo_csv_file="$repo_dir/$OUTPUT_CSV_FILENAME"
+        
+        echo "📂 Creating directory for repository: $repo_slug -> $repo_dir_name"
+        mkdir -p "$repo_dir"
+        
+        # Create CSV file with header for this repository
+        echo "Repository,Number,Title,State,IsDraft,Author,Assignees,Labels,Milestone,BaseBranch,HeadBranch,Additions,Deletions,ChangedFiles,ReviewDecision,URL,ID,CreatedAt,UpdatedAt,ClosedAt,MergedAt,MergedBy,Body" > "$repo_csv_file"
+        
+        echo "📋 Fetching open PRs for '$repo_slug'..."
         
         # Use 'gh pr list' to fetch all specified fields for Pull Requests.
         # We pipe the output to 'jq' to format it into a CSV row.
@@ -111,7 +164,7 @@ if is_csv_format "$REPO_LIST_FILE"; then
               .mergedBy.login // "",
               (.body | gsub("\r\n|\n|\r"; " "))
           ] | @csv' \
-          >> "$OUTPUT_CSV_FILE"
+          >> "$repo_csv_file"
     done
 else
     echo "📄 Detected plain text format. Reading repository URLs line by line..."
@@ -125,7 +178,18 @@ else
       # Extract 'owner/repo' from full URLs.
       repo_slug=$(echo "$repo_line" | sed -E 's|^(https?://)?(www\.)?github\.com/||' | sed 's|/$||' | sed 's/\.git$//')
 
-      echo "Fetching open PRs for '$repo_slug'..."
+      # Create sanitized directory name for the repository
+      repo_dir_name=$(sanitize_repo_name "$repo_slug")
+      repo_dir="$EXPORT_DIR/$repo_dir_name"
+      repo_csv_file="$repo_dir/$OUTPUT_CSV_FILENAME"
+      
+      echo "📂 Creating directory for repository: $repo_slug -> $repo_dir_name"
+      mkdir -p "$repo_dir"
+      
+      # Create CSV file with header for this repository
+      echo "Repository,Number,Title,State,IsDraft,Author,Assignees,Labels,Milestone,BaseBranch,HeadBranch,Additions,Deletions,ChangedFiles,ReviewDecision,URL,ID,CreatedAt,UpdatedAt,ClosedAt,MergedAt,MergedBy,Body" > "$repo_csv_file"
+      
+      echo "📋 Fetching open PRs for '$repo_slug'..."
 
       # Use 'gh pr list' to fetch all specified fields for Pull Requests.
       # We pipe the output to 'jq' to format it into a CSV row.
@@ -160,9 +224,11 @@ else
             .mergedBy.login // "",
             (.body | gsub("\r\n|\n|\r"; " "))
         ] | @csv' \
-        >> "$OUTPUT_CSV_FILE"
+        >> "$repo_csv_file"
 
     done < "$REPO_LIST_FILE"
 fi
 
-echo "✅ Success! All data has been exported to '$OUTPUT_CSV_FILE'"
+echo "✅ Success! All PR data has been exported to individual directories within '$EXPORT_DIR'"
+echo "📁 Each repository has its own directory with '$OUTPUT_CSV_FILENAME' file"
+echo "🗂️  Export structure: $EXPORT_DIR/<repository_name>/$OUTPUT_CSV_FILENAME"
